@@ -1,0 +1,254 @@
+{
+  "meta": {
+    "exported_at": "2026-01-27T22:50:32",
+    "unit": "mm",
+    "room_w": 4510,
+    "room_d": 3010
+  },
+  "pages": [
+    {
+      "title": "Plan A (Wall)",
+      "items": [
+        {
+          "type": "desk",
+          "label": "WS1_D",
+          "shape": "",
+          "x": 3310,
+          "y": 0,
+          "w": 1200,
+          "d": 700
+        },
+        {
+          "type": "chair",
+          "label": "WS1_C",
+          "shape": "",
+          "x": 3560,
+          "y": 705,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS2_D",
+          "shape": "",
+          "x": 3310,
+          "y": 2310,
+          "w": 1200,
+          "d": 700
+        },
+        {
+          "type": "chair",
+          "label": "WS2_C",
+          "shape": "",
+          "x": 3560,
+          "y": 1605,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS3_D",
+          "shape": "",
+          "x": 2110,
+          "y": 0,
+          "w": 1200,
+          "d": 700
+        },
+        {
+          "type": "chair",
+          "label": "WS3_C",
+          "shape": "",
+          "x": 2360,
+          "y": 705,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS4_D",
+          "shape": "",
+          "x": 2110,
+          "y": 2310,
+          "w": 1200,
+          "d": 700
+        },
+        {
+          "type": "chair",
+          "label": "WS4_C",
+          "shape": "",
+          "x": 2360,
+          "y": 1605,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS5_D",
+          "shape": "",
+          "x": 910,
+          "y": 2310,
+          "w": 1200,
+          "d": 700
+        },
+        {
+          "type": "chair",
+          "label": "WS5_C",
+          "shape": "",
+          "x": 1160,
+          "y": 1605,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "storage_M",
+          "label": "EQ1",
+          "shape": "",
+          "x": 0,
+          "y": 2110,
+          "w": 450,
+          "d": 900
+        },
+        {
+          "type": "door_arc",
+          "label": "",
+          "shape": "",
+          "x": 0,
+          "y": 100,
+          "w": 900,
+          "d": 850
+        }
+      ]
+    },
+    {
+      "title": "Plan B (Face-to-Face)",
+      "items": [
+        {
+          "type": "desk",
+          "label": "WS1_D",
+          "shape": "",
+          "x": 2110,
+          "y": 905,
+          "w": 1200,
+          "d": 600
+        },
+        {
+          "type": "chair",
+          "label": "WS1_C",
+          "shape": "",
+          "x": 2360,
+          "y": 200,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS2_D",
+          "shape": "",
+          "x": 2110,
+          "y": 1505,
+          "w": 1200,
+          "d": 600
+        },
+        {
+          "type": "chair",
+          "label": "WS2_C",
+          "shape": "",
+          "x": 2360,
+          "y": 2110,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS3_D",
+          "shape": "",
+          "x": 3310,
+          "y": 905,
+          "w": 1200,
+          "d": 600
+        },
+        {
+          "type": "chair",
+          "label": "WS3_C",
+          "shape": "",
+          "x": 3560,
+          "y": 200,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS4_D",
+          "shape": "",
+          "x": 3310,
+          "y": 1505,
+          "w": 1200,
+          "d": 600
+        },
+        {
+          "type": "chair",
+          "label": "WS4_C",
+          "shape": "",
+          "x": 3560,
+          "y": 2110,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "desk",
+          "label": "WS5_D",
+          "shape": "",
+          "x": 1510,
+          "y": 905,
+          "w": 600,
+          "d": 1200
+        },
+        {
+          "type": "chair",
+          "label": "WS5_C",
+          "shape": "",
+          "x": 805,
+          "y": 1155,
+          "w": 700,
+          "d": 700
+        },
+        {
+          "type": "dim_v",
+          "label": "",
+          "shape": "",
+          "x": 1810,
+          "y": 5,
+          "w": 0,
+          "d": 900
+        },
+        {
+          "type": "dim_v",
+          "label": "",
+          "shape": "",
+          "x": 1810,
+          "y": 2105,
+          "w": 0,
+          "d": 900
+        },
+        {
+          "type": "storage_M",
+          "label": "EQ1",
+          "shape": "",
+          "x": 0,
+          "y": 2110,
+          "w": 450,
+          "d": 900
+        },
+        {
+          "type": "door_arc",
+          "label": "",
+          "shape": "",
+          "x": 0,
+          "y": 100,
+          "w": 900,
+          "d": 850
+        }
+      ]
+    }
+  ]
+}
