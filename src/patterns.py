@@ -8,6 +8,8 @@ from constants import (
     DESK_SIDE_CLEARANCE,
     EQUIPMENT_CLEARANCE,
     MIN_PASSAGE_WIDTH,
+    BACK_TO_BACK_SPACING,
+    RECOMMENDED_PASSAGE_WIDTH,
 )
 from desk_chair import (
     add_desk_and_chair,
@@ -304,9 +306,12 @@ def place_workstations_face_to_face_center(
         y0 = int(center_line - (unit_d_y / 2))
 
     # 椅子のスペースを確保 (椅子サイズ + 机との間隔)
+    # 業界標準: 背面通路は1200mm以上確保 (JOIFA基準)
     chair_space = CHAIR_SIZE + CHAIR_DESK_GAP  # 705mm
-    y0_min = chair_space
-    y0_max = room_d - unit_d_y - chair_space
+    # 背面が壁の場合は850mm、通路の場合は1200mm以上を確保
+    min_back_clearance = max(chair_space, 850)  # 壁背面の最小値
+    y0_min = min_back_clearance
+    y0_max = room_d - unit_d_y - min_back_clearance
 
     # y0 を制約内に収める (椅子が部屋の外に出ないように)
     if y0_max >= y0_min:

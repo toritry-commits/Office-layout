@@ -21,6 +21,32 @@ def export_layout_json(out_path: str, room_w: int, room_d: int, pages: list):
     for p in pages:
         page_obj = {"title": p.get("title", ""), "items": []}
         for it in p.get("items", []):
+            item_type = it.get("type", "")
+            # 窓は rect がないので別形式で出力
+            if item_type == "window":
+                page_obj["items"].append({
+                    "type": "window",
+                    "side": it.get("side", ""),
+                    "offset": it.get("offset", 0),
+                    "width": it.get("width", 0),
+                })
+                continue
+            # door_arc は特殊形式
+            if item_type == "door_arc":
+                r = it.get("rect")
+                if r:
+                    page_obj["items"].append({
+                        "type": "door_arc",
+                        "side": it.get("side", ""),
+                        "x": int(r.x),
+                        "y": int(r.y),
+                        "w": int(r.w),
+                        "d": int(r.d),
+                    })
+                continue
+            # rect がないアイテムはスキップ
+            if "rect" not in it:
+                continue
             r = it["rect"]
             page_obj["items"].append(
                 {
@@ -52,6 +78,40 @@ def export_layout_csv(out_path: str, pages: list):
         for p in pages:
             title = p.get("title", "")
             for it in p.get("items", []):
+                item_type = it.get("type", "")
+                # 窓は rect がないので別形式
+                if item_type == "window":
+                    w.writerow({
+                        "plan_title": title,
+                        "type": "window",
+                        "label": "",
+                        "shape": "",
+                        "x": it.get("offset", 0),
+                        "y": 0,
+                        "w": it.get("width", 0),
+                        "d": 0,
+                        "note": f"side={it.get('side', '')}",
+                    })
+                    continue
+                # door_arc は特殊形式
+                if item_type == "door_arc":
+                    r = it.get("rect")
+                    if r:
+                        w.writerow({
+                            "plan_title": title,
+                            "type": "door_arc",
+                            "label": "",
+                            "shape": "",
+                            "x": int(r.x),
+                            "y": int(r.y),
+                            "w": int(r.w),
+                            "d": int(r.d),
+                            "note": f"side={it.get('side', '')}",
+                        })
+                    continue
+                # rect がないアイテムはスキップ
+                if "rect" not in it:
+                    continue
                 r = it["rect"]
                 w.writerow(
                     {

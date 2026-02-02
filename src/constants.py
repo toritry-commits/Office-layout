@@ -68,7 +68,18 @@ EQUIPMENT_CLEARANCE = _get("placement", "equipment_clearance", 100)   # 設備�
 DESK_CLEAR_RADIUS = _get("placement", "desk_clear_radius", 1225)      # 机周辺の確保半径(mm)
 
 # === 通路関連 ===
-MIN_PASSAGE_WIDTH = _get("passage", "min_width", 1000)  # 最小通路幅(mm)
+# オフィスレイアウト設計原則に基づく通路幅
+# - メイン通路: 1200mm以上 (人がすれ違える幅)
+# - 最小通路: 600mm (一人通行)
+# - 建築基準法: 両側居室廊下1.6m、片側1.2m
+MIN_PASSAGE_WIDTH = _get("passage", "min_width", 1200)  # 最小通路幅(mm) - 人がすれ違える幅
+MIN_AISLE_WIDTH = _get("passage", "min_aisle_width", 600)  # 最小通路幅(mm) - 一人通行
+RECOMMENDED_PASSAGE_WIDTH = _get("passage", "recommended_width", 1500)  # 推奨通路幅(mm)
+
+# === デスク間隔 ===
+# 背中合わせのデスク間隔: 1500-1800mm (椅子の引き出し + 通路)
+BACK_TO_BACK_SPACING = _get("desk_spacing", "back_to_back", 1600)  # 背中合わせ間隔(mm)
+SIDE_BY_SIDE_SPACING = _get("desk_spacing", "side_by_side", 0)  # 横並び間隔(mm)
 
 # === PDF出力関連 ===
 PT_PER_MM = _get("pdf", "pt_per_mm", 72.0 / 25.4)      # 1mm = 72/25.4 pt

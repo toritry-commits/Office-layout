@@ -13,15 +13,30 @@ door:
   clear_radius: 900   # ドア周辺の確保半径(mm)
 
 # === 配置関連 ===
+# 参考: JOIFA (日本オフィス家具協会) 基準、建築基準法施行令第119条
 placement:
   default_desk_depth: 600   # デフォルトの机奥行(mm)
   desk_side_clearance: 200  # 机の側面クリアランス(mm)
   equipment_clearance: 100  # 設備間のクリアランス(mm)
   desk_clear_radius: 1225   # 机周辺の確保半径(mm)
+  # 業界標準に基づく追加設定
+  back_to_back_desk_gap: 1600  # 背中合わせデスク間の間隔(mm) - 推奨1600-1800mm
+  copier_clearance: 1200       # コピー機周りのクリアランス(mm) - 操作・すれ違いに必要
+  storage_front_clearance: 1200  # 収納庫前のクリアランス(mm) - 扉・引き出し可動域含む
+  min_space_per_person: 4.0    # 一人当たり最小スペース(㎡) - 労働安全衛生法基準
+  recommended_space_per_person: 6.7  # 一人当たり推奨スペース(㎡) - カナダ政府基準
 
 # === 通路関連 ===
+# 参考: JOIFA基準、建築基準法施行令第119条
 passage:
-  min_width: 1000     # 最小通路幅(mm)
+  min_width: 900            # 最小通路幅(mm) - 1人通行の最小値
+  single_person: 900        # 1人通行の推奨幅(mm)
+  two_person: 1200          # 2人すれ違いの最小幅(mm)
+  main_aisle: 1600          # メイン通路幅(mm) - 推奨値
+  evacuation_route: 1200    # 避難経路の最小幅(mm) - 建築基準法要件
+  wheelchair_turning: 1500  # 車椅子回転スペース(mm) - ユニバーサルデザイン
+  desk_behind_wall: 850     # デスク背面が壁の場合の通路幅(mm)
+  desk_behind_aisle: 1200   # デスク背面が通路の場合の幅(mm)
 
 # === PDF出力関連 ===
 pdf:
@@ -49,25 +64,53 @@ ws_candidates:
 # === スコアリング設定 ===
 # 各評価項目の重み (合計が1.0になる必要はありません)
 # 用途に応じて調整してください
+# 参考: オフィスレイアウトの5つの評価軸 (ゾーニング、動線、寸法、快適性、法規)
 scoring:
   weights:
     # 席数の重み - 高いほど席数を優先
     seat_count: 1.0
 
     # 通路幅の重み - 高いほど広い通路を優先
+    # 基準: 最小900mm、推奨1200mm以上
     passage_width: 0.5
 
     # 採光(窓からの距離)の重み - 高いほど窓際配置を優先
+    # 研究: 自然光で生産性6%向上 (ベルギー調査)
     natural_light: 0.3
 
     # 動線効率の重み - 高いほどドアからのアクセスを優先
+    # 原則: 入口から目的地へ直線的にアクセスできること
     traffic_flow: 0.4
 
     # 対面配置ボーナス - 対面配置にボーナスを与える
+    # コミュニケーション促進効果
     face_to_face_bonus: 0.2
 
     # スペース効率の重み - 高いほど空きスペースを減らす
-    space_efficiency: 0.3
+    # 基準: 一人当たり4㎡以上確保しつつ効率化
+    space_efficiency: 0.4
+
+    # デスク間隔の重み - エルゴノミクス基準
+    # 最小900mm、推奨1200mm
+    desk_spacing: 0.7
+
+    # 一人当たり面積の重み - 法的基準と快適性
+    # 最小4㎡/人、推奨10㎡/人
+    area_per_person: 0.6
+
+  # スコア計算の閾値
+  thresholds:
+    # 通路幅の評価段階
+    passage_excellent: 1600    # 優秀 (mm)
+    passage_good: 1200         # 良好 (mm)
+    passage_acceptable: 900    # 許容 (mm)
+    passage_poor: 600          # 不可 (mm)
+
+    # 一人当たりスペースの評価
+    space_excellent: 8.0       # 優秀 (㎡/人)
+    space_good: 6.7            # 良好 (㎡/人)
+    space_acceptable: 4.0      # 許容 (㎡/人)
+    space_poor: 3.0            # 不可 (㎡/人)
 
   # プリセット設定 (用途別の重み)
   presets:
@@ -79,6 +122,8 @@ scoring:
       traffic_flow: 0.2
       face_to_face_bonus: 0.1
       space_efficiency: 0.5
+      desk_spacing: 0.3
+      area_per_person: 0.2
 
     # 快適性重視 (通路・採光優先)
     comfort:
@@ -88,6 +133,8 @@ scoring:
       traffic_flow: 0.8
       face_to_face_bonus: 0.3
       space_efficiency: 0.2
+      desk_spacing: 1.0
+      area_per_person: 1.0
 
     # コミュニケーション重視 (対面・動線優先)
     collaboration:
@@ -97,12 +144,27 @@ scoring:
       traffic_flow: 1.0
       face_to_face_bonus: 1.0
       space_efficiency: 0.3
+      desk_spacing: 0.7
+      area_per_person: 0.5
 
     # バランス型 (デフォルト)
     balanced:
       seat_count: 1.0
-      passage_width: 0.5
-      natural_light: 0.3
-      traffic_flow: 0.4
-      face_to_face_bonus: 0.2
+      passage_width: 0.8
+      natural_light: 0.5
+      traffic_flow: 0.6
+      face_to_face_bonus: 0.3
+      space_efficiency: 0.4
+      desk_spacing: 0.7
+      area_per_person: 0.6
+
+    # エルゴノミクス重視 (人間工学基準)
+    ergonomic:
+      seat_count: 0.6
+      passage_width: 1.0
+      natural_light: 0.8
+      traffic_flow: 0.7
+      face_to_face_bonus: 0.4
       space_efficiency: 0.3
+      desk_spacing: 1.0
+      area_per_person: 1.0
