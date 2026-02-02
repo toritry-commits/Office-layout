@@ -4,24 +4,34 @@ from reportlab.lib.pagesizes import A3, landscape
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 
-# 日本語フォント（CID）
+from constants import (
+    PT_PER_MM,
+    WALL_LINE_WIDTH,
+    OUTER_OFFSET_MM,
+    OUTER_LINE_WIDTH,
+    TEXT_GRAY,
+    DIM_COLOR,
+    FLOOR_BASE,
+    FLOOR_GRID,
+    GRID_STEP_MM,
+)
+
+# 日本語フォント(CID)
 try:
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
-    _JP_FONT = "HeiseiKakuGo-W5"  # ゴシック系（日本語OK）
+    _JP_FONT = "HeiseiKakuGo-W5"  # ゴシック系(日本語OK)
     pdfmetrics.registerFont(UnicodeCIDFont(_JP_FONT))
 except Exception:
-    _JP_FONT = "Helvetica"  # 最終フォールバック（※日本語は□になる）
+    _JP_FONT = "Helvetica"  # 最終フォールバック(日本語は□になる)
 
 
-_PT_PER_MM = 72.0 / 25.4  # 1mm = 72/25.4 pt
-_WALL_LINE_WIDTH = 2
-_OUTER_OFFSET_MM = 10
-_OUTER_LINE_WIDTH = 4
-
-
-# 文字色（デスクに合わせる：薄グレー）
-_TEXT_GRAY = (0.55, 0.55, 0.55)
+# 定数はconstants.pyからインポート(互換性のためローカル変数にも代入)
+_PT_PER_MM = PT_PER_MM
+_WALL_LINE_WIDTH = WALL_LINE_WIDTH
+_OUTER_OFFSET_MM = OUTER_OFFSET_MM
+_OUTER_LINE_WIDTH = OUTER_LINE_WIDTH
+_TEXT_GRAY = TEXT_GRAY
 
 
 def _draw_dim_h(c, x0, y0, x1, text, text_y_offset=8, color=None):
@@ -64,6 +74,14 @@ def _calc_scale(room_w_mm, room_d_mm, draw_w_pt, draw_h_pt):
     s_1_30 = _PT_PER_MM / 30.0  # 1:30
     if s_1_30 * room_w_mm <= draw_w_pt and s_1_30 * room_d_mm <= draw_h_pt:
         return s_1_30, "Scale 1:30"
+
+    s_1_50 = _PT_PER_MM / 50.0  # 1:50
+    if s_1_50 * room_w_mm <= draw_w_pt and s_1_50 * room_d_mm <= draw_h_pt:
+        return s_1_50, "Scale 1:50"
+
+    s_1_100 = _PT_PER_MM / 100.0  # 1:100
+    if s_1_100 * room_w_mm <= draw_w_pt and s_1_100 * room_d_mm <= draw_h_pt:
+        return s_1_100, "Scale 1:100"
 
     actual_ratio = round(_PT_PER_MM / fit_s)
     return fit_s, f"Scale FIT (approx 1:{actual_ratio})"
@@ -437,6 +455,49 @@ def _draw_one_page(c, room_w, room_d, items, title, label_w=None, label_d=None):
             c.setLineWidth(1.0)
             c.rect(x, y, w, d, stroke=1, fill=1)
             c.setFillColorRGB(0, 0, 0)
+            c.setStrokeColorRGB(0, 0, 0)
+            continue
+
+        # 窓の描画 (壁上に二重線で表現)
+        if it.get("type") == "window":
+            side = (it.get("side") or "T").upper()
+            win_offset = it.get("offset", 0)
+            win_width = it.get("width", 1000)
+
+            c.setStrokeColorRGB(0, 0.5, 0.8)  # 青みがかった色
+            c.setLineWidth(2.5)
+
+            # 壁の内側に二重線を描画
+            gap = 3  # 二重線の間隔 (pt)
+            if side == "T":
+                # 上壁: y = room_d (PDF座標では oy + rd)
+                x1 = ox + win_offset * s
+                x2 = ox + (win_offset + win_width) * s
+                y_wall = oy + rd
+                c.line(x1, y_wall, x2, y_wall)
+                c.line(x1, y_wall - gap, x2, y_wall - gap)
+            elif side == "B":
+                # 下壁: y = 0 (PDF座標では oy)
+                x1 = ox + win_offset * s
+                x2 = ox + (win_offset + win_width) * s
+                y_wall = oy
+                c.line(x1, y_wall, x2, y_wall)
+                c.line(x1, y_wall + gap, x2, y_wall + gap)
+            elif side == "L":
+                # 左壁: x = 0 (PDF座標では ox)
+                y1 = oy + (room_d - win_offset - win_width) * s
+                y2 = oy + (room_d - win_offset) * s
+                x_wall = ox
+                c.line(x_wall, y1, x_wall, y2)
+                c.line(x_wall + gap, y1, x_wall + gap, y2)
+            else:  # "R"
+                # 右壁: x = room_w (PDF座標では ox + rw)
+                y1 = oy + (room_d - win_offset - win_width) * s
+                y2 = oy + (room_d - win_offset) * s
+                x_wall = ox + rw
+                c.line(x_wall, y1, x_wall, y2)
+                c.line(x_wall - gap, y1, x_wall - gap, y2)
+
             c.setStrokeColorRGB(0, 0, 0)
             continue
 

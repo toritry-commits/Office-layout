@@ -71,3 +71,37 @@ def can_place(r: Rect, room_w: int, room_d: int, blocks: List[Rect]) -> bool:
     if intersects_any(r, blocks):
         return False
     return True
+
+
+def check_desk_chair_collision(
+    desk_rect: Rect,
+    chair_rect: Rect,
+    blocks: List[Rect],
+    room_w: int,
+    room_d: int,
+) -> bool:
+    """
+    机と椅子が柱(blocks)と衝突していないかチェック
+    衝突していなければ True (配置可能)
+    """
+    # 机が部屋内にあるか
+    if not inside_room(desk_rect, room_w, room_d):
+        return False
+    # 椅子が部屋内にあるか
+    if not inside_room(chair_rect, room_w, room_d):
+        return False
+    # 机が柱と衝突していないか
+    if intersects_any(desk_rect, blocks):
+        return False
+    # 椅子が柱と衝突していないか
+    if intersects_any(chair_rect, blocks):
+        return False
+    return True
+
+
+def get_pillar_blocks(blocks: List[Rect]) -> List[Rect]:
+    """
+    blocksリストから柱(pillar)のみを抽出
+    柱は配置済みアイテムと区別するため、最初に追加されたものとして扱う
+    """
+    return blocks

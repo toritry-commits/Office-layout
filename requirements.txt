@@ -1,3 +1,11 @@
+# Core dependencies
 streamlit
 reportlab
 streamlit-drawable-canvas
+pyyaml
+
+# Optional: PDF room size extraction (extract_room_size.py)
+# Uncomment if you need to extract room dimensions from PDF floor plans
+# pdfplumber
+# pymupdf
+# pytesseract  # requires Tesseract OCR installed on system

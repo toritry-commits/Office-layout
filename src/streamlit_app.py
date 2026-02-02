@@ -4,13 +4,16 @@ import tempfile
 from pathlib import Path
 
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
 
 from app import build_blocks, solve_one_plan
 from geometry import Rect
 from catalog import FURNITURE
 from export_data import export_layout_csv, export_layout_json
 from export_pdf import export_multi_layout_pdf
-from patterns import place_workstations_face_to_face_center, place_equipment_along_wall
+from export_svg import render_layout_svg
+from patterns import place_workstations_face_to_face_center, place_equipment_along_wall, place_workstations_mixed
+from utils import score_layout
 
 
 st.set_page_config(page_title="Office Layout Engine", layout="wide")
@@ -22,11 +25,11 @@ if "step" not in st.session_state:
 
 col1, col2 = st.columns(2)
 with col1:
-    room_d = st.number_input("縦 (mm)", min_value=2000, max_value=20000, value=3000, step=50)
+    room_d = st.number_input("縦 (mm)", min_value=2000, max_value=50000, value=3000, step=50)
     door_center = st.checkbox("入口を中央に配置", value=True)
-    door_offset = st.number_input("入口位置オフセット (mm)", min_value=0, max_value=20000, value=0, step=50)
+    door_offset = st.number_input("入口位置オフセット (mm)", min_value=0, max_value=50000, value=0, step=50)
 with col2:
-    room_w = st.number_input("横 (mm)", min_value=2000, max_value=20000, value=4500, step=50)
+    room_w = st.number_input("横 (mm)", min_value=2000, max_value=50000, value=4500, step=50)
     door_side_label = st.selectbox("入口位置 (壁)", ["上 (T)", "下 (B)", "左 (L)", "右 (R)"])
     door_swing = st.selectbox("ドア開き方向", ["室内側", "室外側"])
     flip_v = st.checkbox("ドア上下反転", value=False)
@@ -48,12 +51,92 @@ room_d = int(room_d)
 room_w_actual = room_w + 10
 room_d_actual = room_d + 10
 
-# 柱/凹凸ブロック（数値入力）
+# 柱/凹凸ブロック（数値入力 + ドラッグ配置）
 st.subheader("平面図（柱・凹凸の配置）")
-col_a, col_b = st.columns([2, 1])
-with col_b:
-    block_x = st.number_input("柱/凹凸のX (mm)", min_value=0, max_value=20000, value=0, step=50)
-    block_y = st.number_input("柱/凹凸のY (mm)", min_value=0, max_value=20000, value=0, step=50)
+
+# キャンバスサイズ計算 (最大400pxの幅でアスペクト比を維持)
+canvas_max_width = 400
+canvas_scale = canvas_max_width / room_w_actual
+canvas_width = int(room_w_actual * canvas_scale)
+canvas_height = int(room_d_actual * canvas_scale)
+
+col_canvas, col_input = st.columns([2, 1])
+
+with col_canvas:
+    st.caption("キャンバス上で矩形をドラッグして柱を配置 (または右の数値入力を使用)")
+
+    # 背景画像 (グリッド付きの床) を生成
+    bg_grid_lines = []
+    step = 500 * canvas_scale
+    x = step
+    while x < canvas_width - 0.1:
+        bg_grid_lines.append(f'<line x1="{x}" y1="0" x2="{x}" y2="{canvas_height}" stroke="#BFBFBF" stroke-width="0.5"/>')
+        x += step
+    y = step
+    while y < canvas_height - 0.1:
+        bg_grid_lines.append(f'<line x1="0" y1="{y}" x2="{canvas_width}" y2="{y}" stroke="#BFBFBF" stroke-width="0.5"/>')
+        y += step
+
+    # 既存の柱を描画
+    existing_blocks_svg = []
+    for b in st.session_state.get("blocks", []):
+        bx = b["x"] * canvas_scale
+        by = b["y"] * canvas_scale
+        bw = b["w"] * canvas_scale
+        bd = b["d"] * canvas_scale
+        existing_blocks_svg.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bd}" fill="rgba(128,128,128,0.5)" stroke="#666"/>')
+
+    bg_svg = (
+        f'<svg width="{canvas_width}" height="{canvas_height}" xmlns="http://www.w3.org/2000/svg">'
+        f'<rect width="{canvas_width}" height="{canvas_height}" fill="#D9D9D9"/>'
+        + "".join(bg_grid_lines)
+        + "".join(existing_blocks_svg)
+        + "</svg>"
+    )
+
+    # SVGをPNG変換せずに描画用キャンバスを表示
+    canvas_result = st_canvas(
+        fill_color="rgba(128, 128, 128, 0.5)",
+        stroke_width=2,
+        stroke_color="#666666",
+        background_color="#D9D9D9",
+        height=canvas_height,
+        width=canvas_width,
+        drawing_mode="rect",
+        key="pillar_canvas",
+    )
+
+    # キャンバスで描画された矩形を柱として追加
+    if canvas_result.json_data is not None:
+        objects = canvas_result.json_data.get("objects", [])
+        if objects:
+            st.caption("キャンバスで描画した柱を追加するには「描画を確定」ボタンを押してください")
+            if st.button("描画を確定"):
+                blocks = st.session_state.get("blocks", [])
+                for obj in objects:
+                    if obj.get("type") == "rect":
+                        # キャンバス座標 (px) を部屋座標 (mm) に変換
+                        px_x = obj.get("left", 0)
+                        px_y = obj.get("top", 0)
+                        px_w = obj.get("width", 100)
+                        px_h = obj.get("height", 100)
+
+                        mm_x = int(px_x / canvas_scale)
+                        mm_y = int(px_y / canvas_scale)
+                        mm_w = int(px_w / canvas_scale)
+                        mm_h = int(px_h / canvas_scale)
+
+                        # 最小サイズ制限
+                        if mm_w >= 100 and mm_h >= 100:
+                            if mm_x + mm_w <= room_w_actual and mm_y + mm_h <= room_d_actual:
+                                blocks.append({"x": mm_x, "y": mm_y, "w": mm_w, "d": mm_h})
+                st.session_state["blocks"] = blocks
+                st.rerun()
+
+with col_input:
+    st.caption("数値入力で追加")
+    block_x = st.number_input("柱/凹凸のX (mm)", min_value=0, max_value=50000, value=0, step=50)
+    block_y = st.number_input("柱/凹凸のY (mm)", min_value=0, max_value=50000, value=0, step=50)
     block_w = st.number_input("柱/凹凸の幅 (mm)", min_value=100, max_value=5000, value=600, step=50)
     block_d = st.number_input("柱/凹凸の奥行 (mm)", min_value=100, max_value=5000, value=600, step=50)
     if st.button("柱/凹凸を追加"):
@@ -66,9 +149,50 @@ with col_b:
     if st.button("柱/凹凸をクリア"):
         st.session_state["blocks"] = []
 
-with col_a:
     st.caption("現在の柱/凹凸一覧")
-    st.table(st.session_state.get("blocks", []))
+    blocks_display = []
+    for i, b in enumerate(st.session_state.get("blocks", [])):
+        blocks_display.append({
+            "#": i + 1,
+            "X": f"{b['x']}mm",
+            "Y": f"{b['y']}mm",
+            "幅": f"{b['w']}mm",
+            "奥行": f"{b['d']}mm"
+        })
+    if blocks_display:
+        st.table(blocks_display)
+    else:
+        st.caption("柱はまだ追加されていません")
+
+# 窓の入力
+st.subheader("窓の配置")
+col_win_a, col_win_b = st.columns([2, 1])
+with col_win_b:
+    window_side_label = st.selectbox("窓の位置 (壁)", ["上 (T)", "下 (B)", "左 (L)", "右 (R)"], key="window_side")
+    window_offset = st.number_input("窓の位置オフセット (mm)", min_value=0, max_value=50000, value=500, step=50)
+    window_width = st.number_input("窓の幅 (mm)", min_value=100, max_value=5000, value=1000, step=50)
+    if st.button("窓を追加"):
+        windows = st.session_state.get("windows", [])
+        window_side = window_side_label.split("(")[1][0]
+        windows.append({"side": window_side, "offset": int(window_offset), "width": int(window_width)})
+        st.session_state["windows"] = windows
+    if st.button("窓をクリア"):
+        st.session_state["windows"] = []
+
+with col_win_a:
+    st.caption("現在の窓一覧")
+    windows_display = []
+    for w in st.session_state.get("windows", []):
+        side_labels = {"T": "上", "B": "下", "L": "左", "R": "右"}
+        windows_display.append({
+            "壁": side_labels.get(w["side"], w["side"]),
+            "オフセット": f"{w['offset']}mm",
+            "幅": f"{w['width']}mm"
+        })
+    if windows_display:
+        st.table(windows_display)
+    else:
+        st.caption("窓はまだ追加されていません")
 
 # 「平面図の作成へ」ボタンは柱型入力の下に配置
 save_room = st.button("平面図の作成へ")
@@ -207,6 +331,40 @@ if st.session_state.get("preview_ready"):
 
         door_items.extend(door_group)
 
+    # 窓の描画 (プレビュー用)
+    window_svgs = []
+    for win in st.session_state.get("windows", []):
+        side = win["side"]
+        win_offset = win["offset"]
+        win_width = win["width"]
+        win_color = "#0080CC"
+        gap = 2
+
+        if side == "T":
+            x1 = ox + win_offset * scale_preview
+            x2 = ox + (win_offset + win_width) * scale_preview
+            y_wall = oy
+            window_svgs.append(f'<line x1="{x1}" y1="{y_wall}" x2="{x2}" y2="{y_wall}" stroke="{win_color}" stroke-width="2.5"/>')
+            window_svgs.append(f'<line x1="{x1}" y1="{y_wall + gap}" x2="{x2}" y2="{y_wall + gap}" stroke="{win_color}" stroke-width="2.5"/>')
+        elif side == "B":
+            x1 = ox + win_offset * scale_preview
+            x2 = ox + (win_offset + win_width) * scale_preview
+            y_wall = oy + floor_d
+            window_svgs.append(f'<line x1="{x1}" y1="{y_wall}" x2="{x2}" y2="{y_wall}" stroke="{win_color}" stroke-width="2.5"/>')
+            window_svgs.append(f'<line x1="{x1}" y1="{y_wall - gap}" x2="{x2}" y2="{y_wall - gap}" stroke="{win_color}" stroke-width="2.5"/>')
+        elif side == "L":
+            y1 = oy + win_offset * scale_preview
+            y2 = oy + (win_offset + win_width) * scale_preview
+            x_wall = ox
+            window_svgs.append(f'<line x1="{x_wall}" y1="{y1}" x2="{x_wall}" y2="{y2}" stroke="{win_color}" stroke-width="2.5"/>')
+            window_svgs.append(f'<line x1="{x_wall + gap}" y1="{y1}" x2="{x_wall + gap}" y2="{y2}" stroke="{win_color}" stroke-width="2.5"/>')
+        else:  # R
+            y1 = oy + win_offset * scale_preview
+            y2 = oy + (win_offset + win_width) * scale_preview
+            x_wall = ox + floor_w
+            window_svgs.append(f'<line x1="{x_wall}" y1="{y1}" x2="{x_wall}" y2="{y2}" stroke="{win_color}" stroke-width="2.5"/>')
+            window_svgs.append(f'<line x1="{x_wall - gap}" y1="{y1}" x2="{x_wall - gap}" y2="{y2}" stroke="{win_color}" stroke-width="2.5"/>')
+
     # outer frame 10mm
     off = 10 * scale_preview
     svg = (
@@ -219,6 +377,7 @@ if st.session_state.get("preview_ready"):
         + f'<rect x="{ox - off}" y="{oy - off}" width="{floor_w + off*2}" height="{floor_d + off*2}" fill="none" stroke="{outline}" stroke-width="4"/>'
         + "".join(rects)
         + "".join(door_items)
+        + "".join(window_svgs)
         + "</svg>"
     )
     st.image(svg)
@@ -273,22 +432,8 @@ if submitted:
         door_tip=door_tip,
     )
 
-    def _desk_area(ws_type: str) -> int:
-        try:
-            s = ws_type.replace("ws_", "")
-            a, b = s.split("x")
-            return int(a) * int(b)
-        except Exception:
-            return 0
-
     def _score_face(res):
-        ok = 1 if res.get("ok") else 0
-        seats = res.get("seats_placed", 0)
-        equip = res.get("equipment_placed", 0)
-        desk_area = _desk_area(res.get("ws_type", ""))
-        if priority_value == "desk":
-            return (ok, seats, desk_area, equip)
-        return (ok, seats, equip, desk_area)
+        return score_layout(res, priority_value)
 
     res_face = None
     for ws_type in ws_candidates_face:
@@ -327,6 +472,45 @@ if submitted:
             elif cur == best and res_wall.get("ws_type") and tmp.get("ws_type") != res_wall.get("ws_type"):
                 res_face = tmp
 
+    # 混在パターン (壁面 + 対面)
+    res_mixed = None
+    # ドアと反対の壁に壁付け席を配置
+    wall_for_mixed = "R" if door_side in ("L", "T") else "L"
+    wall_seats_count = min(2, seats_required)  # 壁沿いは2席まで
+
+    for ws_type in ws_candidates_face:
+        tmp = place_workstations_mixed(
+            room_w=room_w_actual,
+            room_d=room_d_actual,
+            furniture=FURNITURE,
+            ws_type=ws_type,
+            seats_required=seats_required,
+            blocks=blocks,
+            wall_seats=wall_seats_count,
+            wall_side=wall_for_mixed,
+            door_tip=door_tip,
+        )
+        if equipment:
+            tmp = place_equipment_along_wall(
+                base_result=tmp,
+                room_w=room_w_actual,
+                room_d=room_d_actual,
+                furniture=FURNITURE,
+                equipment_list=equipment,
+                blocks=blocks,
+                equipment_x_override=None,
+                door_side=door_side,
+                door_offset=None,
+                equipment_clearance_mm=0,
+            )
+        if res_mixed is None:
+            res_mixed = tmp
+        else:
+            cur = _score_face(tmp)
+            best = _score_face(res_mixed)
+            if cur > best:
+                res_mixed = tmp
+
     door_item = {
         "type": "door_arc",
         "rect": door_rect,
@@ -339,10 +523,22 @@ if submitted:
         {"type": "block", "rect": Rect(x=b["x"], y=b["y"], w=b["w"], d=b["d"])}
         for b in st.session_state.get("blocks", [])
     ]
-    pages = [
-        {"title": "Plan A (Wall)", "items": block_items + res_wall["items"] + [door_item]},
-        {"title": "Plan B (Face-to-Face)", "items": block_items + res_face["items"] + [door_item]},
+    # 窓アイテムを追加
+    window_items = [
+        {"type": "window", "side": w["side"], "offset": w["offset"], "width": w["width"]}
+        for w in st.session_state.get("windows", [])
     ]
+    pages = [
+        {"title": "Plan A (Wall)", "items": block_items + res_wall["items"] + [door_item] + window_items},
+        {"title": "Plan B (Face-to-Face)", "items": block_items + res_face["items"] + [door_item] + window_items},
+        {"title": "Plan C (Mixed)", "items": block_items + res_mixed["items"] + [door_item] + window_items},
+    ]
+
+    # 固定パスにJSONを自動保存 (Claude検証用)
+    output_dir = Path(__file__).parent.parent / "output"
+    output_dir.mkdir(exist_ok=True)
+    latest_json_path = output_dir / "latest_layout.json"
+    export_layout_json(str(latest_json_path), room_w_actual, room_d_actual, pages)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -366,15 +562,36 @@ if submitted:
         st.session_state["layout_csv"] = csv_path.read_bytes()
 
     st.success("レイアウトを生成しました。")
+    st.info(f"JSON保存先: {latest_json_path}")
+
+    # SVGで画面表示
+    st.subheader("レイアウト結果")
+    col_svg1, col_svg2, col_svg3 = st.columns(3)
+    with col_svg1:
+        svg_wall = render_layout_svg(room_w_actual, room_d_actual, pages[0]["items"], title="Plan A (Wall)")
+        st.image(svg_wall)
+        st.caption(f"席数: {res_wall.get('seats_placed', 0)} / 収納: {res_wall.get('equipment_placed', 0)}")
+    with col_svg2:
+        svg_face = render_layout_svg(room_w_actual, room_d_actual, pages[1]["items"], title="Plan B (Face-to-Face)")
+        st.image(svg_face)
+        st.caption(f"席数: {res_face.get('seats_placed', 0)} / 収納: {res_face.get('equipment_placed', 0)}")
+    with col_svg3:
+        svg_mixed = render_layout_svg(room_w_actual, room_d_actual, pages[2]["items"], title="Plan C (Mixed)")
+        st.image(svg_mixed)
+        st.caption(f"席数: {res_mixed.get('seats_placed', 0)} / 収納: {res_mixed.get('equipment_placed', 0)}")
     if res_wall.get("seats_placed", 0) < seats_required:
         st.warning("Plan A（壁付け）が希望席数を満たしていません。")
     if res_face.get("seats_placed", 0) < seats_required:
         st.warning("Plan B（対面）が希望席数を満たしていません。")
+    if res_mixed.get("seats_placed", 0) < seats_required:
+        st.warning("Plan C（混在）が希望席数を満たしていません。")
     if equipment:
         if res_wall.get("equipment_placed", 0) < len(equipment):
             st.warning("Plan A（壁付け）で収納が全数配置できていません。")
         if res_face.get("equipment_placed", 0) < len(equipment):
             st.warning("Plan B（対面）で収納が全数配置できていません。")
+        if res_mixed.get("equipment_placed", 0) < len(equipment):
+            st.warning("Plan C（混在）で収納が全数配置できていません。")
     pdf_bytes = st.session_state.get("layout_pdf")
     json_bytes = st.session_state.get("layout_json")
     csv_bytes = st.session_state.get("layout_csv")

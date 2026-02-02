@@ -1,252 +1,37 @@
 from typing import Dict, List, Tuple
-from geometry import Rect, can_place
+from geometry import Rect, can_place, check_desk_chair_collision
+from constants import (
+    CHAIR_SIZE,
+    CHAIR_DESK_GAP,
+    DEFAULT_DESK_DEPTH,
+    DOOR_CLEAR_RADIUS,
+    DESK_SIDE_CLEARANCE,
+    EQUIPMENT_CLEARANCE,
+    MIN_PASSAGE_WIDTH,
+)
+from desk_chair import (
+    add_desk_and_chair,
+    add_wall_desk_and_chair,
+    add_free_desk_and_chair,
+    add_lr_desk_and_chair,
+    _parse_desk_depth,
+    calc_wall_desk_chair_rects,
+    can_place_desk_chair,
+)
 
 
 def _ws_size(furniture: Dict, ws_type: str) -> Tuple[int, int]:
     """
     ws furniture:
-      w = 壁沿いの長さ（机長辺）
-      d = 壁から必要奥行（机＋椅子＋引きしろ込みの想定）
+      w = 壁沿いの長さ(机長辺)
+      d = 壁から必要奥行(机+椅子+引きしろ込みの想定)
     """
     f = furniture[ws_type]
     return int(f["w"]), int(f["d"])
 
 
-def _parse_desk_depth(ws_type: str) -> int:
-    # ws_1000x600 -> 600
-    try:
-        s = ws_type.replace("ws_", "")
-        _, b = s.split("x")
-        return int(b)
-    except Exception:
-        return 600
-
-
-def _add_desk_and_chair_items_circle(
-    items: list,
-    label_prefix: str,
-    room_w: int,
-    ws_type: str,
-    wall_side: str,     # "L" or "R"
-    y: int,
-    unit_w_along_wall: int,     # 壁沿い方向（=机長辺）
-    unit_depth_from_wall: int,  # 壁から室内方向（=必要奥行）
-):
-    """
-    見た目用：
-      - desk: 壁にピタ付け（長辺が壁沿い）
-      - chair: 直径550mmの円
-        「机の室内側長辺の中心」に、円の端が机の端に“接触”するように配置
-    当たり判定は席ユニットで確保済みなので、desk/chairは描画専用。
-    """
-    desk_depth = min(_parse_desk_depth(ws_type), unit_depth_from_wall)
-
-    # desk（壁付け・長辺=壁沿い）
-    if wall_side == "L":
-        desk_x = 0
-    else:
-        desk_x = room_w - desk_depth
-
-    desk_rect = Rect(x=desk_x, y=y, w=desk_depth, d=unit_w_along_wall)
-    items.append({"type": "desk", "rect": desk_rect, "label": f"{label_prefix}_D"})
-
-    # chair（650角）— desk_rectから50mm離す
-    chair_size = 700
-    gap = 5
-
-    # 机の「室内側端」を desk_rect から厳密に取る
-    if wall_side == "L":
-        inner_edge_x = desk_rect.x + desk_rect.w
-        chair_x = inner_edge_x + gap
-        back_side = "R"
-    else:
-        inner_edge_x = desk_rect.x
-        chair_x = inner_edge_x - gap - chair_size
-        back_side = "L"
-
-    # 机の長辺中心（壁沿い方向の中心）
-    cy = desk_rect.y + (desk_rect.d / 2.0)
-    chair_y = cy - chair_size / 2.0
-
-    chair_box = Rect(
-        x=int(chair_x),
-        y=int(chair_y),
-        w=int(chair_size),
-        d=int(chair_size),
-    )
-    items.append(
-        {
-            "type": "chair",
-            "rect": chair_box,
-            "label": f"{label_prefix}_C",
-            "chair_back": back_side,
-        }
-    )
-
-
-def _add_desk_and_chair_items_circle_tb(
-    items: list,
-    label_prefix: str,
-    room_d: int,
-    ws_type: str,
-    wall_side: str,     # "T" or "B"
-    x: int,
-    unit_w_along_wall: int,     # 壁沿い方向（=机長辺）
-    unit_depth_from_wall: int,  # 壁から室内方向（=必要奥行）
-):
-    """
-    見た目用（上/下壁）：
-      - desk: 壁にピタ付け（長辺が壁沿い）
-      - chair: 直径550mmの円
-    """
-    desk_depth = min(_parse_desk_depth(ws_type), unit_depth_from_wall)
-
-    if wall_side == "T":
-        desk_y = 0
-    else:
-        desk_y = room_d - desk_depth
-
-    desk_rect = Rect(x=x, y=desk_y, w=unit_w_along_wall, d=desk_depth)
-    items.append({"type": "desk", "rect": desk_rect, "label": f"{label_prefix}_D"})
-
-    chair_size = 700
-    gap = 5
-
-    if wall_side == "T":
-        inner_edge_y = desk_rect.y + desk_rect.d
-        chair_y = inner_edge_y + gap
-        back_side = "B"
-    else:
-        inner_edge_y = desk_rect.y
-        chair_y = inner_edge_y - gap - chair_size
-        back_side = "T"
-
-    cx = desk_rect.x + (desk_rect.w / 2.0)
-    chair_x = cx - chair_size / 2.0
-
-    chair_box = Rect(
-        x=int(chair_x),
-        y=int(chair_y),
-        w=int(chair_size),
-        d=int(chair_size),
-    )
-    items.append(
-        {
-            "type": "chair",
-            "rect": chair_box,
-            "label": f"{label_prefix}_C",
-            "chair_back": back_side,
-        }
-    )
-
-
-def _add_desk_and_chair_items_circle_free(
-    items: list,
-    label_prefix: str,
-    ws_type: str,
-    x: int,
-    y: int,
-    desk_w: int,
-    unit_depth_from_wall: int,
-    chair_side: str,  # "up" or "down"
-    desk_depth_override: int = None,
-):
-    """
-    自由配置用：
-      - desk: 指定座標
-      - chair: desk の長辺中央、chair_side 方向に接触
-    """
-    if desk_depth_override is not None:
-        desk_depth = min(int(desk_depth_override), unit_depth_from_wall)
-    else:
-        desk_depth = min(_parse_desk_depth(ws_type), unit_depth_from_wall)
-    desk_rect = Rect(x=x, y=y, w=desk_w, d=desk_depth)
-    items.append({"type": "desk", "rect": desk_rect, "label": f"{label_prefix}_D"})
-
-    chair_size = 700
-    gap = 5
-
-    if chair_side == "down":
-        inner_edge_y = desk_rect.y + desk_rect.d
-        chair_y = inner_edge_y + gap
-        back_side = "B"
-    else:
-        inner_edge_y = desk_rect.y
-        chair_y = inner_edge_y - gap - chair_size
-        back_side = "T"
-
-    cx = desk_rect.x + (desk_rect.w / 2.0)
-    chair_x = cx - chair_size / 2.0
-
-    chair_box = Rect(
-        x=int(chair_x),
-        y=int(chair_y),
-        w=int(chair_size),
-        d=int(chair_size),
-    )
-    items.append(
-        {
-            "type": "chair",
-            "rect": chair_box,
-            "label": f"{label_prefix}_C",
-            "chair_back": back_side,
-        }
-    )
-
-
-def _add_desk_and_chair_items_circle_lr(
-    items: list,
-    label_prefix: str,
-    ws_type: str,
-    x: int,
-    y: int,
-    desk_w: int,
-    desk_d: int,
-    chair_side: str,  # "L" or "R"
-    chair_rotate_deg: int = 0,
-):
-    """
-    自由配置（左右向き）：
-      - desk: 指定座標
-      - chair: desk の短辺中央、chair_side 方向に接触
-    """
-    desk_rect = Rect(x=x, y=y, w=desk_w, d=desk_d)
-    items.append({"type": "desk", "rect": desk_rect, "label": f"{label_prefix}_D"})
-
-    chair_size = 700
-    gap = 5
-
-    if chair_side == "L":
-        inner_edge_x = desk_rect.x
-        chair_x = inner_edge_x - gap - chair_size
-        back_side = "L"
-    else:
-        inner_edge_x = desk_rect.x + desk_rect.w
-        chair_x = inner_edge_x + gap
-        back_side = "R"
-
-    cy = desk_rect.y + (desk_rect.d / 2.0)
-    chair_y = cy - chair_size / 2.0
-
-    chair_box = Rect(
-        x=int(chair_x),
-        y=int(chair_y),
-        w=int(chair_size),
-        d=int(chair_size),
-    )
-    items.append(
-        {
-            "type": "chair",
-            "rect": chair_box,
-            "label": f"{label_prefix}_C",
-            "chair_back": back_side,
-            "chair_rotate": chair_rotate_deg,
-        }
-    )
-
-
 # =========================
-# 両壁2列（席数最大）
+# 両壁2列(席数最大)
 # =========================
 def place_workstations_double_wall(
     room_w: int,
@@ -267,6 +52,8 @@ def place_workstations_double_wall(
 
     items = []
     placed = list(blocks)
+    # 柱ブロック (元のblocks) を保持して机椅子の衝突判定に使用
+    pillar_blocks = list(blocks)
 
     y = 0
     y_limit = room_d - unit_d_y
@@ -275,33 +62,49 @@ def place_workstations_double_wall(
     while y <= y_limit and seat_idx <= seats_required:
         # 左壁
         left_unit = Rect(x=0, y=y, w=unit_w_x, d=unit_d_y)
-        if can_place(left_unit, room_w, room_d, placed) and _clear_of_point(left_unit, door_tip, door_clear_radius) and seat_idx <= seats_required:
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_left = (
+            can_place(left_unit, room_w, room_d, placed) and
+            _clear_of_point(left_unit, door_tip, door_clear_radius) and
+            can_place_desk_chair(room_w, room_w, room_d, ws_type, "L", y, unit_d_y, unit_w_x, False, pillar_blocks) and
+            seat_idx <= seats_required
+        )
+        if can_place_left:
             placed.append(left_unit)
-            _add_desk_and_chair_items_circle(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_w=room_w,
+                room_size=room_w,
                 ws_type=ws_type,
                 wall_side="L",
-                y=y,
-                unit_w_along_wall=unit_d_y,
-                unit_depth_from_wall=unit_w_x,
+                position=y,
+                unit_along_wall=unit_d_y,
+                unit_depth=unit_w_x,
+                is_horizontal=False,
             )
             seat_idx += 1
 
         # 右壁
         right_unit = Rect(x=room_w - unit_w_x, y=y, w=unit_w_x, d=unit_d_y)
-        if can_place(right_unit, room_w, room_d, placed) and _clear_of_point(right_unit, door_tip, door_clear_radius) and seat_idx <= seats_required:
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_right = (
+            can_place(right_unit, room_w, room_d, placed) and
+            _clear_of_point(right_unit, door_tip, door_clear_radius) and
+            can_place_desk_chair(room_w, room_w, room_d, ws_type, "R", y, unit_d_y, unit_w_x, False, pillar_blocks) and
+            seat_idx <= seats_required
+        )
+        if can_place_right:
             placed.append(right_unit)
-            _add_desk_and_chair_items_circle(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_w=room_w,
+                room_size=room_w,
                 ws_type=ws_type,
                 wall_side="R",
-                y=y,
-                unit_w_along_wall=unit_d_y,
-                unit_depth_from_wall=unit_w_x,
+                position=y,
+                unit_along_wall=unit_d_y,
+                unit_depth=unit_w_x,
+                is_horizontal=False,
             )
             seat_idx += 1
 
@@ -341,6 +144,8 @@ def place_workstations_double_wall_top_bottom(
 
     items = []
     placed = list(blocks)
+    # 柱ブロック (元のblocks) を保持して机椅子の衝突判定に使用
+    pillar_blocks = list(blocks)
 
     x_limit = room_w - unit_w_x
     step = unit_w_x + gap_x
@@ -357,33 +162,49 @@ def place_workstations_double_wall_top_bottom(
     while _in_range(x) and seat_idx <= seats_required:
         # 上壁
         top_unit = Rect(x=x, y=0, w=unit_w_x, d=unit_d_y)
-        if can_place(top_unit, room_w, room_d, placed) and _clear_of_point(top_unit, door_tip, door_clear_radius) and seat_idx <= seats_required:
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_top = (
+            can_place(top_unit, room_w, room_d, placed) and
+            _clear_of_point(top_unit, door_tip, door_clear_radius) and
+            can_place_desk_chair(room_d, room_w, room_d, ws_type, "T", x, unit_w_x, unit_d_y, True, pillar_blocks) and
+            seat_idx <= seats_required
+        )
+        if can_place_top:
             placed.append(top_unit)
-            _add_desk_and_chair_items_circle_tb(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_d=room_d,
+                room_size=room_d,
                 ws_type=ws_type,
                 wall_side="T",
-                x=x,
-                unit_w_along_wall=unit_w_x,
-                unit_depth_from_wall=unit_d_y,
+                position=x,
+                unit_along_wall=unit_w_x,
+                unit_depth=unit_d_y,
+                is_horizontal=True,
             )
             seat_idx += 1
 
         # 下壁
         bottom_unit = Rect(x=x, y=room_d - unit_d_y, w=unit_w_x, d=unit_d_y)
-        if can_place(bottom_unit, room_w, room_d, placed) and _clear_of_point(bottom_unit, door_tip, door_clear_radius) and seat_idx <= seats_required:
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_bottom = (
+            can_place(bottom_unit, room_w, room_d, placed) and
+            _clear_of_point(bottom_unit, door_tip, door_clear_radius) and
+            can_place_desk_chair(room_d, room_w, room_d, ws_type, "B", x, unit_w_x, unit_d_y, True, pillar_blocks) and
+            seat_idx <= seats_required
+        )
+        if can_place_bottom:
             placed.append(bottom_unit)
-            _add_desk_and_chair_items_circle_tb(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_d=room_d,
+                room_size=room_d,
                 ws_type=ws_type,
                 wall_side="B",
-                x=x,
-                unit_w_along_wall=unit_w_x,
-                unit_depth_from_wall=unit_d_y,
+                position=x,
+                unit_along_wall=unit_w_x,
+                unit_depth=unit_d_y,
+                is_horizontal=True,
             )
             seat_idx += 1
 
@@ -470,7 +291,8 @@ def place_workstations_face_to_face_center(
 
     def _place_unit(x: int, y: int):
         r = Rect(x=x, y=y, w=unit_w_x, d=unit_d_y)
-        if can_place(r, room_w, room_d, placed) and _clear_of_point(r, door_tip, 900):
+        # 対面配置ではドア先端チェックを緩和 (200mm)
+        if can_place(r, room_w, room_d, placed) and _clear_of_point(r, door_tip, 200):
             placed.append(r)
             return r
         return None
@@ -481,6 +303,26 @@ def place_workstations_face_to_face_center(
         unit_d_y = desk_depth * 2
         y0 = int(center_line - (unit_d_y / 2))
 
+    # 椅子のスペースを確保 (椅子サイズ + 机との間隔)
+    chair_space = CHAIR_SIZE + CHAIR_DESK_GAP  # 705mm
+    y0_min = chair_space
+    y0_max = room_d - unit_d_y - chair_space
+
+    # y0 を制約内に収める (椅子が部屋の外に出ないように)
+    if y0_max >= y0_min:
+        y0 = max(y0_min, min(y0_max, y0))
+    else:
+        # 椅子スペースが確保できない場合は配置不可
+        return {
+            "ok": False,
+            "seats_placed": 0,
+            "seats_required": seats_required,
+            "items": [],
+            "ws_type": ws_type,
+            "pattern": "face_to_face_center",
+        }
+
+    # ドア回避ロジック (L/R)
     if door_rect is not None and door_side in ("L", "R"):
         if not (y0 + unit_d_y <= door_rect.y or y0 >= door_rect.y2):
             y0_down = door_rect.y2
@@ -489,39 +331,48 @@ def place_workstations_face_to_face_center(
                 y0 = y0_down
             elif 0 <= y0_up and (y0_up + unit_d_y) <= room_d:
                 y0 = y0_up
+
+    # ドア回避ロジック (T/B) - x=0から開始してドアを避けながら配置
+    if door_rect is not None and door_side in ("T", "B"):
+        x_start = 0  # 左端から開始
     x = x_start
     unit_rects = []
-    for i in range(total_units):
+    units_placed = 0
+    max_x = room_w - unit_w_x
+
+    # ドアを避けながらユニットを配置 (whileループで配置可能な限り続ける)
+    while units_placed < total_units and x <= max_x:
         unit_rect = _place_unit(x, y0)
         if unit_rect is None:
             x += unit_w_x + gap_x
             continue
         unit_rects.append(unit_rect)
+        units_placed += 1
 
         if seat_idx <= seats_target:
             top_desk_y = center_line - desk_depth
             bottom_desk_y = center_line
-            _add_desk_and_chair_items_circle_free(
+            add_free_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
                 ws_type=ws_type,
                 x=x,
                 y=top_desk_y,
                 desk_w=ws_w,
-                unit_depth_from_wall=desk_depth,
+                unit_depth=desk_depth,
                 chair_side="up",
                 desk_depth_override=desk_depth,
             )
             seat_idx += 1
         if seat_idx <= seats_target:
-            _add_desk_and_chair_items_circle_free(
+            add_free_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
                 ws_type=ws_type,
                 x=x,
                 y=bottom_desk_y,
                 desk_w=ws_w,
-                unit_depth_from_wall=desk_depth,
+                unit_depth=desk_depth,
                 chair_side="down",
                 desk_depth_override=desk_depth,
             )
@@ -558,7 +409,7 @@ def place_workstations_face_to_face_center(
             if not can_place(rotated_rect, room_w, room_d, placed) or not _clear_of_point(rotated_rect, door_tip, 900):
                 continue
 
-            _add_desk_and_chair_items_circle_lr(
+            add_lr_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
                 ws_type=ws_type,
@@ -653,25 +504,35 @@ def place_workstations_single_wall(
 
     items = []
     placed = list(blocks)
+    # 柱ブロック (元のblocks) を保持して机椅子の衝突判定に使用
+    pillar_blocks = list(blocks)
 
     x = 0 if side == "L" else room_w - unit_w_x
     y = 0
     y_limit = room_d - unit_d_y
     seat_idx = 1
+    wall_side = "L" if side == "L" else "R"
 
     while y <= y_limit and seat_idx <= seats_required:
         unit = Rect(x=x, y=y, w=unit_w_x, d=unit_d_y)
-        if can_place(unit, room_w, room_d, placed) and _clear_of_point(unit, door_tip, door_clear_radius):
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_here = (
+            can_place(unit, room_w, room_d, placed) and
+            _clear_of_point(unit, door_tip, door_clear_radius) and
+            can_place_desk_chair(room_w, room_w, room_d, ws_type, wall_side, y, unit_d_y, unit_w_x, False, pillar_blocks)
+        )
+        if can_place_here:
             placed.append(unit)
-            _add_desk_and_chair_items_circle(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_w=room_w,
+                room_size=room_w,
                 ws_type=ws_type,
-                wall_side=("L" if side == "L" else "R"),
-                y=y,
-                unit_w_along_wall=unit_d_y,
-                unit_depth_from_wall=unit_w_x,
+                wall_side=wall_side,
+                position=y,
+                unit_along_wall=unit_d_y,
+                unit_depth=unit_w_x,
+                is_horizontal=False,
             )
             seat_idx += 1
         y += unit_d_y + gap_y
@@ -711,6 +572,8 @@ def place_workstations_single_wall_tb(
 
     items = []
     placed = list(blocks)
+    # 柱ブロック (元のblocks) を保持して机椅子の衝突判定に使用
+    pillar_blocks = list(blocks)
 
     y = 0 if side == "T" else room_d - unit_d_y
     x_limit = room_w - unit_w_x
@@ -721,23 +584,38 @@ def place_workstations_single_wall_tb(
     else:
         x = 0
     seat_idx = 1
+    wall_side = "T" if side == "T" else "B"
+
+    # ドアと反対側の壁に配置する場合はドアクリアランスチェックを緩和
+    effective_door_radius = door_clear_radius
+    if door_tip is not None:
+        door_is_top = door_tip[1] < room_d / 2
+        if (door_is_top and side == "B") or (not door_is_top and side == "T"):
+            effective_door_radius = 0  # 反対側なのでチェック不要
 
     def _in_range(xx: int) -> bool:
         return 0 <= xx <= x_limit
 
     while _in_range(x) and seat_idx <= seats_required:
         unit = Rect(x=x, y=y, w=unit_w_x, d=unit_d_y)
-        if can_place(unit, room_w, room_d, placed) and _clear_of_point(unit, door_tip, door_clear_radius):
+        # 席ユニットの衝突判定 + 机椅子の柱衝突判定
+        can_place_here = (
+            can_place(unit, room_w, room_d, placed) and
+            _clear_of_point(unit, door_tip, effective_door_radius) and
+            can_place_desk_chair(room_d, room_w, room_d, ws_type, wall_side, x, unit_w_x, unit_d_y, True, pillar_blocks)
+        )
+        if can_place_here:
             placed.append(unit)
-            _add_desk_and_chair_items_circle_tb(
+            add_wall_desk_and_chair(
                 items=items,
                 label_prefix=f"WS{seat_idx}",
-                room_d=room_d,
+                room_size=room_d,
                 ws_type=ws_type,
-                wall_side=("T" if side == "T" else "B"),
-                x=x,
-                unit_w_along_wall=unit_w_x,
-                unit_depth_from_wall=unit_d_y,
+                wall_side=wall_side,
+                position=x,
+                unit_along_wall=unit_w_x,
+                unit_depth=unit_d_y,
+                is_horizontal=True,
             )
             seat_idx += 1
         x += step
@@ -811,7 +689,8 @@ def place_equipment_wall_only(
             step = 50
 
         placed_flag = False
-        strict_chain = eq.startswith("storage_") and equipment_clearance_mm == 0
+        # strict_chain を無効化して、配置できない収納があっても次の収納を試行する
+        # (以前はstorage_で始まる収納で equipment_clearance_mm == 0 の場合にループを終了していた)
         while 0 <= pos <= max_pos:
             if wall in ("L", "R"):
                 r = Rect(x=x, y=pos, w=depth, d=along)
@@ -861,14 +740,10 @@ def place_equipment_wall_only(
                     start_y = pos + along + gap_y
                 placed_flag = True
                 break
-            if strict_chain:
-                break
             pos += step
 
-        # 壁付けで入らないなら無理に入れない
+        # 壁付けで入らない場合は次の収納を試行 (スキップではなく別の壁で再試行される)
         if not placed_flag:
-            if strict_chain:
-                break
             continue
 
     return {"items": items, "placed_rects": placed}
@@ -1040,16 +915,16 @@ def place_equipment_along_wall(
 
     avoid_centers = [_item_center(r) for r in desk_rects]
 
-    long_walls = ["T", "B"] if room_w >= room_d else ["L", "R"]
-    preferred_walls = [w for w in long_walls if w in desk_walls] or list(desk_walls)
-    walls = preferred_walls
+    # 収納配置の壁優先順序: 左壁→右壁→上壁→下壁 (ドア側を最後に)
+    door_side_u = (door_side or "").upper()
+    all_walls = ["L", "R", "T", "B"]
+    if door_side_u in all_walls:
+        all_walls.remove(door_side_u)
+        all_walls.append(door_side_u)
+    walls = all_walls
 
     if equipment_x_override is not None:
         walls = ["L"] if equipment_x_override <= room_w / 2 else ["R"]
-
-    door_side_u = (door_side or "").upper()
-    if door_side_u and door_side_u not in walls:
-        walls = walls + [door_side_u]
 
     remaining = list(equipment_list)
     equipment_items = []
@@ -1098,3 +973,233 @@ def place_equipment_along_wall(
     out["equipment_target"] = len(equipment_list)
     out["equipment_placed"] = len(equipment_items)
     return out
+
+
+# =========================
+# 混在パターン (壁面 + 対面)
+# =========================
+def place_workstations_mixed(
+    room_w: int,
+    room_d: int,
+    furniture: Dict,
+    ws_type: str,
+    seats_required: int,
+    blocks: List[Rect],
+    wall_seats: int = 2,
+    wall_side: str = "L",
+    door_tip: Tuple[float, float] = None,
+    door_clear_radius: int = 900,
+):
+    """
+    混在パターン: 壁沿いにいくつかの席を配置し、残りを対面で中央に配置する。
+    wall_seats: 壁沿いに配置する席数
+    wall_side: 壁沿い配置を行う壁 ("L", "R", "T", "B")
+    """
+    ws_w, ws_d = _ws_size(furniture, ws_type)
+    items = []
+    placed = list(blocks)
+    pillar_blocks = list(blocks)
+    seat_idx = 1
+
+    wall_side = (wall_side or "L").upper()
+    is_horizontal = wall_side in ("T", "B")
+
+    if is_horizontal:
+        unit_w_x = ws_w
+        unit_d_y = ws_d
+    else:
+        unit_w_x = ws_d
+        unit_d_y = ws_w
+
+    # 壁沿い席を配置
+    wall_seats_placed = 0
+    if wall_side == "L":
+        y = 0
+        while wall_seats_placed < wall_seats and seat_idx <= seats_required and y + unit_d_y <= room_d:
+            unit = Rect(x=0, y=y, w=unit_w_x, d=unit_d_y)
+            can_place_here = (
+                can_place(unit, room_w, room_d, placed) and
+                _clear_of_point(unit, door_tip, door_clear_radius) and
+                can_place_desk_chair(room_w, room_w, room_d, ws_type, "L", y, unit_d_y, unit_w_x, False, pillar_blocks)
+            )
+            if can_place_here:
+                placed.append(unit)
+                add_wall_desk_and_chair(
+                    items=items,
+                    label_prefix=f"WS{seat_idx}",
+                    room_size=room_w,
+                    ws_type=ws_type,
+                    wall_side="L",
+                    position=y,
+                    unit_along_wall=unit_d_y,
+                    unit_depth=unit_w_x,
+                    is_horizontal=False,
+                )
+                seat_idx += 1
+                wall_seats_placed += 1
+            y += unit_d_y
+
+    elif wall_side == "R":
+        y = 0
+        while wall_seats_placed < wall_seats and seat_idx <= seats_required and y + unit_d_y <= room_d:
+            unit = Rect(x=room_w - unit_w_x, y=y, w=unit_w_x, d=unit_d_y)
+            can_place_here = (
+                can_place(unit, room_w, room_d, placed) and
+                _clear_of_point(unit, door_tip, door_clear_radius) and
+                can_place_desk_chair(room_w, room_w, room_d, ws_type, "R", y, unit_d_y, unit_w_x, False, pillar_blocks)
+            )
+            if can_place_here:
+                placed.append(unit)
+                add_wall_desk_and_chair(
+                    items=items,
+                    label_prefix=f"WS{seat_idx}",
+                    room_size=room_w,
+                    ws_type=ws_type,
+                    wall_side="R",
+                    position=y,
+                    unit_along_wall=unit_d_y,
+                    unit_depth=unit_w_x,
+                    is_horizontal=False,
+                )
+                seat_idx += 1
+                wall_seats_placed += 1
+            y += unit_d_y
+
+    elif wall_side == "T":
+        x = 0
+        while wall_seats_placed < wall_seats and seat_idx <= seats_required and x + unit_w_x <= room_w:
+            unit = Rect(x=x, y=0, w=unit_w_x, d=unit_d_y)
+            can_place_here = (
+                can_place(unit, room_w, room_d, placed) and
+                _clear_of_point(unit, door_tip, door_clear_radius) and
+                can_place_desk_chair(room_d, room_w, room_d, ws_type, "T", x, unit_w_x, unit_d_y, True, pillar_blocks)
+            )
+            if can_place_here:
+                placed.append(unit)
+                add_wall_desk_and_chair(
+                    items=items,
+                    label_prefix=f"WS{seat_idx}",
+                    room_size=room_d,
+                    ws_type=ws_type,
+                    wall_side="T",
+                    position=x,
+                    unit_along_wall=unit_w_x,
+                    unit_depth=unit_d_y,
+                    is_horizontal=True,
+                )
+                seat_idx += 1
+                wall_seats_placed += 1
+            x += unit_w_x
+
+    else:  # "B"
+        x = 0
+        while wall_seats_placed < wall_seats and seat_idx <= seats_required and x + unit_w_x <= room_w:
+            unit = Rect(x=x, y=room_d - unit_d_y, w=unit_w_x, d=unit_d_y)
+            can_place_here = (
+                can_place(unit, room_w, room_d, placed) and
+                _clear_of_point(unit, door_tip, door_clear_radius) and
+                can_place_desk_chair(room_d, room_w, room_d, ws_type, "B", x, unit_w_x, unit_d_y, True, pillar_blocks)
+            )
+            if can_place_here:
+                placed.append(unit)
+                add_wall_desk_and_chair(
+                    items=items,
+                    label_prefix=f"WS{seat_idx}",
+                    room_size=room_d,
+                    ws_type=ws_type,
+                    wall_side="B",
+                    position=x,
+                    unit_along_wall=unit_w_x,
+                    unit_depth=unit_d_y,
+                    is_horizontal=True,
+                )
+                seat_idx += 1
+                wall_seats_placed += 1
+            x += unit_w_x
+
+    # 残りの席を対面で中央に配置
+    remaining_seats = seats_required - (seat_idx - 1)
+    if remaining_seats > 0:
+        # 対面用のユニットサイズ
+        face_unit_w_x = ws_w
+        face_unit_d_y = ws_d * 2
+
+        if room_d < face_unit_d_y:
+            # 対面配置ができない場合はここで終了
+            seats_placed = seat_idx - 1
+            ok = seats_placed >= seats_required
+            return {
+                "ok": ok,
+                "seats_placed": seats_placed,
+                "seats_required": seats_required,
+                "items": items,
+                "ws_type": ws_type,
+                "pattern": "mixed",
+            }
+
+        pairs_needed = (remaining_seats + 1) // 2
+        center_line = int(room_d / 2)
+        y0 = int(center_line - (face_unit_d_y / 2))
+
+        # 壁側のスペースを避けて配置
+        if wall_side == "L":
+            x_start = unit_w_x + 100  # 壁席の幅 + 隙間
+        elif wall_side == "R":
+            x_start = 0
+        else:
+            x_start = 0
+
+        x = x_start
+        desk_depth = min(_parse_desk_depth(ws_type), ws_d)
+
+        for _ in range(pairs_needed):
+            if seat_idx > seats_required:
+                break
+            if x + face_unit_w_x > room_w:
+                break
+
+            unit = Rect(x=x, y=y0, w=face_unit_w_x, d=face_unit_d_y)
+            if can_place(unit, room_w, room_d, placed) and _clear_of_point(unit, door_tip, 200):
+                placed.append(unit)
+
+                # 対面2席を追加 (奥側)
+                add_free_desk_and_chair(
+                    items=items,
+                    label_prefix=f"WS{seat_idx}",
+                    ws_type=ws_type,
+                    x=x,
+                    y=y0,
+                    desk_w=ws_w,
+                    unit_depth=desk_depth,
+                    chair_side="up",
+                    desk_depth_override=desk_depth,
+                )
+                seat_idx += 1
+
+                if seat_idx <= seats_required:
+                    # 対面2席を追加 (手前側)
+                    add_free_desk_and_chair(
+                        items=items,
+                        label_prefix=f"WS{seat_idx}",
+                        ws_type=ws_type,
+                        x=x,
+                        y=y0 + face_unit_d_y - desk_depth,
+                        desk_w=ws_w,
+                        unit_depth=desk_depth,
+                        chair_side="down",
+                        desk_depth_override=desk_depth,
+                    )
+                    seat_idx += 1
+
+            x += face_unit_w_x
+
+    seats_placed = seat_idx - 1
+    ok = seats_placed >= seats_required
+    return {
+        "ok": ok,
+        "seats_placed": seats_placed,
+        "seats_required": seats_required,
+        "items": items,
+        "ws_type": ws_type,
+        "pattern": "mixed",
+    }

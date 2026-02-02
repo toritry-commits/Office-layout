@@ -1,7 +1,10 @@
 import argparse
+import logging
 
 from catalog import FURNITURE
 from geometry import Rect
+from constants import DOOR_WIDTH, DOOR_BUFFER_DEPTH
+from utils import parse_equipment, calc_desk_area, score_layout, get_ws_candidates
 from patterns import (
     place_workstations_double_wall,
     place_workstations_double_wall_top_bottom,
@@ -12,6 +15,10 @@ from patterns import (
 )
 from export_pdf import export_multi_layout_pdf
 from export_data import export_layout_json, export_layout_csv
+
+# ロギング設定(デバッグ時は logging.DEBUG に変更)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def build_blocks(room_w, room_d, door_w=850, door_d=900, door_side="T", door_offset=None, door_swing="in"):
@@ -60,15 +67,7 @@ def build_blocks(room_w, room_d, door_w=850, door_d=900, door_side="T", door_off
     return blocks, door_rect, door_side, tip
 
 
-def parse_equipment(equip_str: str):
-    """
-    "storage_M,storage_M,mfp" -> ["storage_M", "storage_M", "mfp"]
-    空なら []
-    """
-    if not equip_str:
-        return []
-    parts = [p.strip() for p in equip_str.split(",")]
-    return [p for p in parts if p]
+# parse_equipment は utils.py に移動済み
 
 
 def solve_one_plan(
@@ -90,22 +89,8 @@ def solve_one_plan(
     """
     best = None
 
-    def _desk_area(ws_type: str) -> int:
-        try:
-            s = ws_type.replace("ws_", "")
-            a, b = s.split("x")
-            return int(a) * int(b)
-        except Exception:
-            return 0
-
     def _score(res):
-        ok = 1 if res.get("ok") else 0
-        seats = res.get("seats_placed", 0)
-        equip = res.get("equipment_placed", 0)
-        desk_area = _desk_area(res.get("ws_type", ""))
-        if priority in ("desk", "desk_1200"):
-            return (ok, seats, desk_area, equip)
-        return (ok, seats, equip, desk_area)
+        return score_layout(res, priority)
 
     for ws_type in ws_candidates:
         candidates = []
@@ -124,7 +109,7 @@ def solve_one_plan(
                 start_from=start_from,
                 door_tip=door_tip,
             )
-            print("--- try double TB:", ws_type, tmp["seats_placed"], tmp["ok"])
+            logger.debug("try double TB: %s seats=%d ok=%s", ws_type, tmp["seats_placed"], tmp["ok"])
             candidates.append(tmp)
         elif door_side_u in ("T", "B"):
             side = "B" if door_side_u == "T" else "T"
@@ -144,7 +129,7 @@ def solve_one_plan(
                 start_from=start_from,
                 door_tip=door_tip,
             )
-            print("--- try single", side, ":", ws_type, tmp["seats_placed"], tmp["ok"])
+            logger.debug("try single %s: %s seats=%d ok=%s", side, ws_type, tmp["seats_placed"], tmp["ok"])
             candidates.append(tmp)
         else:
             # 1) 両壁（左右）
@@ -158,7 +143,7 @@ def solve_one_plan(
                 gap_y=0,
                 door_tip=door_tip,
             )
-            print("--- try double:", ws_type, tmp1["seats_placed"], tmp1["ok"])
+            logger.debug("try double: %s seats=%d ok=%s", ws_type, tmp1["seats_placed"], tmp1["ok"])
 
             # 2) 上下壁
             tmp_tb = place_workstations_double_wall_top_bottom(
@@ -185,7 +170,7 @@ def solve_one_plan(
                 gap_y=0,
                 door_tip=door_tip,
             )
-            print("--- try single L:", ws_type, tmp2["seats_placed"], tmp2["ok"])
+            logger.debug("try single L: %s seats=%d ok=%s", ws_type, tmp2["seats_placed"], tmp2["ok"])
 
             # 4) 片壁（右）
             tmp3 = place_workstations_single_wall(
@@ -199,7 +184,7 @@ def solve_one_plan(
                 gap_y=0,
                 door_tip=door_tip,
             )
-            print("--- try single R:", ws_type, tmp3["seats_placed"], tmp3["ok"])
+            logger.debug("try single R: %s seats=%d ok=%s", ws_type, tmp3["seats_placed"], tmp3["ok"])
 
             candidates = [tmp1, tmp_tb, tmp2, tmp3]
         if equipment:
@@ -295,22 +280,8 @@ def main():
         door_tip=door_tip,
     )
 
-    def _desk_area(ws_type: str) -> int:
-        try:
-            s = ws_type.replace("ws_", "")
-            a, b = s.split("x")
-            return int(a) * int(b)
-        except Exception:
-            return 0
-
     def _score_face(res):
-        ok = 1 if res.get("ok") else 0
-        seats = res.get("seats_placed", 0)
-        equip = res.get("equipment_placed", 0)
-        desk_area = _desk_area(res.get("ws_type", ""))
-        if args.priority == "desk":
-            return (ok, seats, desk_area, equip)
-        return (ok, seats, equip, desk_area)
+        return score_layout(res, args.priority)
 
     res_face = None
     for ws_type in ws_candidates_face:
@@ -354,35 +325,35 @@ def main():
     pages.append({"title": "Plan B (Face-to-Face)", "items": res_face["items"] + [door_item]})
 
     export_multi_layout_pdf(args.out, room_w_actual, room_d_actual, pages, label_w=room_w, label_d=room_d)
-    print(f"PDF exported: {args.out}")
+    logger.info("PDF exported: %s", args.out)
 
     export_layout_json("layout_3plans.json", room_w_actual, room_d_actual, pages)
     export_layout_csv("layout_3plans.csv", pages)
-    print("Data exported: layout_3plans.json, layout_3plans.csv")
+    logger.info("Data exported: layout_3plans.json, layout_3plans.csv")
 
     # コンソールにも要約
-    print("\n=== RESULT (Plan A / Wall) ===")
-    print("pattern:", res_wall.get("pattern"))
-    print("ws_type:", res_wall.get("ws_type"))
-    print("seats_required:", seats_required)
-    print("seats_placed:", res_wall.get("seats_placed"))
-    print("ok:", res_wall.get("ok"))
+    logger.info("=== RESULT (Plan A / Wall) ===")
+    logger.info("pattern: %s", res_wall.get("pattern"))
+    logger.info("ws_type: %s", res_wall.get("ws_type"))
+    logger.info("seats_required: %d", seats_required)
+    logger.info("seats_placed: %d", res_wall.get("seats_placed"))
+    logger.info("ok: %s", res_wall.get("ok"))
     if "equipment_target" in res_wall:
-        print("equipment_target:", res_wall.get("equipment_target"))
-        print("equipment_placed:", res_wall.get("equipment_placed"))
+        logger.info("equipment_target: %d", res_wall.get("equipment_target"))
+        logger.info("equipment_placed: %d", res_wall.get("equipment_placed"))
     if "score" in res_wall:
-        print("score:", res_wall.get("score"))
+        logger.info("score: %s", res_wall.get("score"))
 
     # 警告表示
     if res_wall.get("seats_placed", 0) < seats_required:
-        print("WARNING: Plan A does not meet required seats.")
+        logger.warning("Plan A does not meet required seats.")
     if res_face.get("seats_placed", 0) < seats_required:
-        print("WARNING: Plan B does not meet required seats.")
+        logger.warning("Plan B does not meet required seats.")
     if equipment:
         if res_wall.get("equipment_placed", 0) < len(equipment):
-            print("WARNING: Plan A cannot place all equipment.")
+            logger.warning("Plan A cannot place all equipment.")
         if res_face.get("equipment_placed", 0) < len(equipment):
-            print("WARNING: Plan B cannot place all equipment.")
+            logger.warning("Plan B cannot place all equipment.")
 
 
 if __name__ == "__main__":

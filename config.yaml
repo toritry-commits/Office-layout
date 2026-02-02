@@ -1,0 +1,108 @@
+# Office-layout 設定ファイル
+# このファイルを編集してレイアウト生成をカスタマイズできます
+
+# === 椅子関連 ===
+chair:
+  size: 700           # 椅子のサイズ(mm) - 正方形
+  desk_gap: 5         # 椅子と机の間隔(mm)
+
+# === ドア関連 ===
+door:
+  width: 850          # ドアの幅(mm)
+  buffer_depth: 900   # ドアバッファの奥行(mm)
+  clear_radius: 900   # ドア周辺の確保半径(mm)
+
+# === 配置関連 ===
+placement:
+  default_desk_depth: 600   # デフォルトの机奥行(mm)
+  desk_side_clearance: 200  # 机の側面クリアランス(mm)
+  equipment_clearance: 100  # 設備間のクリアランス(mm)
+  desk_clear_radius: 1225   # 机周辺の確保半径(mm)
+
+# === 通路関連 ===
+passage:
+  min_width: 1000     # 最小通路幅(mm)
+
+# === PDF出力関連 ===
+pdf:
+  pt_per_mm: 2.8346456692913385  # 1mm = 72/25.4 pt
+  wall_line_width: 2            # 壁線の太さ
+  outer_offset_mm: 10           # 外枠オフセット(mm)
+  outer_line_width: 4           # 外枠線の太さ
+
+# === 色定義(RGB 0-1) ===
+colors:
+  text_gray: [0.55, 0.55, 0.55]
+  dim_color: [0.5, 0.5, 0.5]
+  floor_base: [0.85, 0.85, 0.85]
+  floor_grid: [0.75, 0.75, 0.75]
+
+# === グリッド ===
+grid:
+  step_mm: 500        # グリッド間隔(mm)
+
+# === 机候補リスト ===
+ws_candidates:
+  default: ["ws_1200x600", "ws_1000x600", "ws_1200x700"]
+  1200_only: ["ws_1200x600", "ws_1200x700"]
+
+# === スコアリング設定 ===
+# 各評価項目の重み (合計が1.0になる必要はありません)
+# 用途に応じて調整してください
+scoring:
+  weights:
+    # 席数の重み - 高いほど席数を優先
+    seat_count: 1.0
+
+    # 通路幅の重み - 高いほど広い通路を優先
+    passage_width: 0.5
+
+    # 採光(窓からの距離)の重み - 高いほど窓際配置を優先
+    natural_light: 0.3
+
+    # 動線効率の重み - 高いほどドアからのアクセスを優先
+    traffic_flow: 0.4
+
+    # 対面配置ボーナス - 対面配置にボーナスを与える
+    face_to_face_bonus: 0.2
+
+    # スペース効率の重み - 高いほど空きスペースを減らす
+    space_efficiency: 0.3
+
+  # プリセット設定 (用途別の重み)
+  presets:
+    # 席数最大化 (人数優先)
+    max_seats:
+      seat_count: 2.0
+      passage_width: 0.3
+      natural_light: 0.1
+      traffic_flow: 0.2
+      face_to_face_bonus: 0.1
+      space_efficiency: 0.5
+
+    # 快適性重視 (通路・採光優先)
+    comfort:
+      seat_count: 0.5
+      passage_width: 1.0
+      natural_light: 1.0
+      traffic_flow: 0.8
+      face_to_face_bonus: 0.3
+      space_efficiency: 0.2
+
+    # コミュニケーション重視 (対面・動線優先)
+    collaboration:
+      seat_count: 0.8
+      passage_width: 0.6
+      natural_light: 0.4
+      traffic_flow: 1.0
+      face_to_face_bonus: 1.0
+      space_efficiency: 0.3
+
+    # バランス型 (デフォルト)
+    balanced:
+      seat_count: 1.0
+      passage_width: 0.5
+      natural_light: 0.3
+      traffic_flow: 0.4
+      face_to_face_bonus: 0.2
+      space_efficiency: 0.3

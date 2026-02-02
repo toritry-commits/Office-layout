@@ -1,0 +1,111 @@
+{
+  "_comment": "家具カタログ - サイズは全てmm単位",
+  "_version": "1.0",
+
+  "desks": {
+    "_description": "デスク定義 - w:幅, d:奥行, chair_space:椅子用スペース",
+    "ws_1200x700": {
+      "name": "標準デスク 1200x700",
+      "w": 1200,
+      "d": 700,
+      "chair_space": 600,
+      "unit_d": 1300
+    },
+    "ws_1200x600": {
+      "name": "標準デスク 1200x600",
+      "w": 1200,
+      "d": 600,
+      "chair_space": 600,
+      "unit_d": 1200
+    },
+    "ws_1000x600": {
+      "name": "コンパクトデスク 1000x600",
+      "w": 1000,
+      "d": 600,
+      "chair_space": 600,
+      "unit_d": 1200
+    },
+    "ws_1400x700": {
+      "name": "ワイドデスク 1400x700",
+      "w": 1400,
+      "d": 700,
+      "chair_space": 600,
+      "unit_d": 1300
+    },
+    "ws_1600x800": {
+      "name": "エグゼクティブデスク 1600x800",
+      "w": 1600,
+      "d": 800,
+      "chair_space": 700,
+      "unit_d": 1500
+    }
+  },
+
+  "storage": {
+    "_description": "収納家具 - clear_front:前方に必要な空間",
+    "storage_S": {
+      "name": "収納キャビネット S",
+      "w": 900,
+      "d": 350,
+      "clear_front": 600
+    },
+    "storage_M": {
+      "name": "収納キャビネット M",
+      "w": 900,
+      "d": 450,
+      "clear_front": 600
+    },
+    "storage_D": {
+      "name": "収納キャビネット D (深型)",
+      "w": 900,
+      "d": 600,
+      "clear_front": 600
+    }
+  },
+
+  "equipment": {
+    "_description": "OA機器",
+    "mfp": {
+      "name": "複合機",
+      "w": 600,
+      "d": 650,
+      "clear_front": 900
+    },
+    "printer": {
+      "name": "プリンター",
+      "w": 500,
+      "d": 450,
+      "clear_front": 600
+    }
+  },
+
+  "meeting": {
+    "_description": "会議・打合せ用家具",
+    "meet2p": {
+      "name": "2人用打合せスペース",
+      "w": 750,
+      "d": 750,
+      "clear_front": 600
+    },
+    "meet4p": {
+      "name": "4人用打合せスペース",
+      "w": 1200,
+      "d": 900,
+      "clear_front": 800
+    }
+  },
+
+  "chairs": {
+    "_description": "椅子",
+    "office_chair": {
+      "name": "オフィスチェア",
+      "w": 700,
+      "d": 700
+    },
+    "meeting_chair": {
+      "name": "会議用チェア",
+      "w": 500,
+      "d": 500
+    }
+  }
+}
