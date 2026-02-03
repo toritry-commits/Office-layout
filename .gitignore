@@ -31,3 +31,13 @@ src/output/
 
 # Jupyter Notebook
 .ipynb_checkpoints/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Generated layout files (keep samples in samples/ folder instead)
+layout_*.pdf
+layout_*.json
+layout_*.csv
